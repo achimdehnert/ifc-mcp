@@ -1,2 +1,4 @@
 """Dependency Injection."""
-from __future__ import annotations
+from ifc_mcp.infrastructure.di.container import Container, container
+
+__all__ = ["Container", "container"]
