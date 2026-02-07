@@ -1,0 +1,70 @@
+version: "3.8"
+
+services:
+  # ==========================================================================
+  # PostgreSQL Database
+  # ==========================================================================
+  db:
+    image: postgres:15-alpine
+    container_name: ifc_mcp_db
+    environment:
+      POSTGRES_USER: ifc_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: ifc_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ifc_user -d ifc_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==========================================================================
+  # IFC MCP Server
+  # ==========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ifc_mcp_app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ifc_user:${DB_PASSWORD:-changeme}@db:5432/ifc_db
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-console}
+      DEBUG: ${DEBUG:-false}
+    volumes:
+      # Mount IFC files directory
+      - ${IFC_DATA_DIR:-./data}:/data:ro
+      # Mount source for development
+      - ./src:/app/src:ro
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  # ==========================================================================
+  # Database Admin (optional, for development)
+  # ==========================================================================
+  adminer:
+    image: adminer:latest
+    container_name: ifc_mcp_adminer
+    depends_on:
+      - db
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    restart: unless-stopped
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: ifc_mcp_network
