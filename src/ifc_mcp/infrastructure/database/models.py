@@ -31,13 +31,25 @@ from sqlalchemy.orm import (
 from sqlalchemy.sql import func
 
 
+# =============================================================================
+# Base Class
+# =============================================================================
+
+
 class Base(DeclarativeBase):
     """SQLAlchemy declarative base."""
+
     pass
+
+
+# =============================================================================
+# Enum Types (matching PostgreSQL enums)
+# =============================================================================
 
 
 class IfcSchemaVersionEnum(str, Enum):
     """IFC Schema versions."""
+
     IFC2X3 = "IFC2X3"
     IFC4 = "IFC4"
     IFC4X1 = "IFC4X1"
@@ -47,6 +59,7 @@ class IfcSchemaVersionEnum(str, Enum):
 
 class ElementCategoryEnum(str, Enum):
     """Element categories."""
+
     wall = "wall"
     wall_standard_case = "wall_standard_case"
     door = "door"
@@ -70,6 +83,7 @@ class ElementCategoryEnum(str, Enum):
 
 class ExZoneEnum(str, Enum):
     """Ex-Zone classifications."""
+
     zone_0 = "zone_0"
     zone_1 = "zone_1"
     zone_2 = "zone_2"
@@ -81,6 +95,7 @@ class ExZoneEnum(str, Enum):
 
 class PropertyDataTypeEnum(str, Enum):
     """Property data types."""
+
     string = "string"
     integer = "integer"
     real = "real"
@@ -91,12 +106,20 @@ class PropertyDataTypeEnum(str, Enum):
     text = "text"
 
 
+# =============================================================================
+# ORM Models
+# =============================================================================
+
+
 class ProjectORM(Base):
     """IFC Project table."""
 
     __tablename__ = "ifc_projects"
 
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -107,34 +130,45 @@ class ProjectORM(Base):
     organization: Mapped[str | None] = mapped_column(String(255))
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
     imported_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Relationships
     storeys: Mapped[list["StoreyORM"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan",
+        back_populates="project",
+        cascade="all, delete-orphan",
         order_by="StoreyORM.elevation",
     )
     elements: Mapped[list["BuildingElementORM"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan",
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
     spaces: Mapped[list["SpaceORM"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan",
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
     element_types: Mapped[list["ElementTypeORM"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan",
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
     materials: Mapped[list["MaterialORM"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan",
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
     pset_definitions: Mapped[list["PropertySetDefinitionORM"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan",
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
 
 
@@ -146,7 +180,8 @@ class StoreyORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ifc_projects.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("ifc_projects.id", ondelete="CASCADE"),
+        nullable=False,
     )
     global_id: Mapped[str] = mapped_column(String(22), nullable=False)
     name: Mapped[str | None] = mapped_column(String(255))
@@ -154,9 +189,11 @@ class StoreyORM(Base):
     elevation: Mapped[Decimal | None] = mapped_column(DECIMAL(10, 4))
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
+    # Relationships
     project: Mapped["ProjectORM"] = relationship(back_populates="storeys")
     elements: Mapped[list["BuildingElementORM"]] = relationship(
         back_populates="storey"
@@ -178,7 +215,8 @@ class ElementTypeORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ifc_projects.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("ifc_projects.id", ondelete="CASCADE"),
+        nullable=False,
     )
     global_id: Mapped[str] = mapped_column(String(22), nullable=False)
     ifc_class: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -186,15 +224,18 @@ class ElementTypeORM(Base):
     description: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
+    # Relationships
     project: Mapped["ProjectORM"] = relationship(back_populates="element_types")
     elements: Mapped[list["BuildingElementORM"]] = relationship(
         back_populates="element_type"
     )
     properties: Mapped[list["TypePropertyORM"]] = relationship(
-        back_populates="element_type", cascade="all, delete-orphan",
+        back_populates="element_type",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (
@@ -211,13 +252,16 @@ class BuildingElementORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ifc_projects.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("ifc_projects.id", ondelete="CASCADE"),
+        nullable=False,
     )
     storey_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("storeys.id", ondelete="SET NULL"),
+        PGUUID(as_uuid=True),
+        ForeignKey("storeys.id", ondelete="SET NULL"),
     )
     type_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("element_types.id", ondelete="SET NULL"),
+        PGUUID(as_uuid=True),
+        ForeignKey("element_types.id", ondelete="SET NULL"),
     )
 
     global_id: Mapped[str] = mapped_column(String(22), nullable=False)
@@ -228,36 +272,44 @@ class BuildingElementORM(Base):
     object_type: Mapped[str | None] = mapped_column(String(255))
     tag: Mapped[str | None] = mapped_column(String(100))
 
+    # Geometry (denormalized)
     length_m: Mapped[Decimal | None] = mapped_column(DECIMAL(10, 4))
     width_m: Mapped[Decimal | None] = mapped_column(DECIMAL(10, 4))
     height_m: Mapped[Decimal | None] = mapped_column(DECIMAL(10, 4))
     area_m2: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
     volume_m3: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
 
+    # Position
     position_x: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
     position_y: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
     position_z: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
 
+    # Flags
     is_external: Mapped[bool | None] = mapped_column(Boolean)
     is_load_bearing: Mapped[bool | None] = mapped_column(Boolean)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
+    # Relationships
     project: Mapped["ProjectORM"] = relationship(back_populates="elements")
     storey: Mapped["StoreyORM | None"] = relationship(back_populates="elements")
     element_type: Mapped["ElementTypeORM | None"] = relationship(
         back_populates="elements"
     )
     properties: Mapped[list["ElementPropertyORM"]] = relationship(
-        back_populates="element", cascade="all, delete-orphan",
+        back_populates="element",
+        cascade="all, delete-orphan",
     )
     quantities: Mapped[list["ElementQuantityORM"]] = relationship(
-        back_populates="element", cascade="all, delete-orphan",
+        back_populates="element",
+        cascade="all, delete-orphan",
     )
     materials: Mapped[list["ElementMaterialORM"]] = relationship(
-        back_populates="element", cascade="all, delete-orphan",
+        back_populates="element",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (
@@ -278,14 +330,17 @@ class SpaceORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ifc_projects.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("ifc_projects.id", ondelete="CASCADE"),
+        nullable=False,
     )
     storey_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("storeys.id", ondelete="SET NULL"),
+        PGUUID(as_uuid=True),
+        ForeignKey("storeys.id", ondelete="SET NULL"),
     )
     element_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("building_elements.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("building_elements.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     global_id: Mapped[str] = mapped_column(String(22), nullable=False)
@@ -293,31 +348,39 @@ class SpaceORM(Base):
     long_name: Mapped[str | None] = mapped_column(String(255))
     space_number: Mapped[str | None] = mapped_column(String(50))
 
+    # Geometry
     net_floor_area: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
     gross_floor_area: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
     net_volume: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
     gross_volume: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 4))
     net_height: Mapped[Decimal | None] = mapped_column(DECIMAL(10, 4))
 
+    # Usage
     occupancy_type: Mapped[str | None] = mapped_column(String(100))
 
+    # Ex-Protection
     ex_zone: Mapped[str] = mapped_column(String(20), default="none")
     hazardous_area: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Fire Safety
     fire_compartment: Mapped[str | None] = mapped_column(String(100))
 
+    # Finishes
     finish_floor: Mapped[str | None] = mapped_column(String(255))
     finish_wall: Mapped[str | None] = mapped_column(String(255))
     finish_ceiling: Mapped[str | None] = mapped_column(String(255))
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
 
+    # Relationships
     project: Mapped["ProjectORM"] = relationship(back_populates="spaces")
     storey: Mapped["StoreyORM | None"] = relationship(back_populates="spaces")
     boundaries: Mapped[list["SpaceBoundaryORM"]] = relationship(
-        back_populates="space", cascade="all, delete-orphan",
+        back_populates="space",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (
@@ -329,6 +392,11 @@ class SpaceORM(Base):
     )
 
 
+# =============================================================================
+# Property/Quantity Tables
+# =============================================================================
+
+
 class PropertySetDefinitionORM(Base):
     """Property set definition table."""
 
@@ -337,11 +405,13 @@ class PropertySetDefinitionORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ifc_projects.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("ifc_projects.id", ondelete="CASCADE"),
+        nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     ifc_class: Mapped[str | None] = mapped_column(String(100))
 
+    # Relationships
     project: Mapped["ProjectORM"] = relationship(back_populates="pset_definitions")
     element_properties: Mapped[list["ElementPropertyORM"]] = relationship(
         back_populates="pset_definition"
@@ -363,11 +433,13 @@ class ElementPropertyORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     element_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("building_elements.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("building_elements.id", ondelete="CASCADE"),
+        nullable=False,
     )
     pset_definition_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("property_set_definitions.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("property_set_definitions.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     property_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -375,6 +447,7 @@ class ElementPropertyORM(Base):
     data_type: Mapped[str] = mapped_column(String(20), default="string")
     unit: Mapped[str | None] = mapped_column(String(50))
 
+    # Relationships
     element: Mapped["BuildingElementORM"] = relationship(back_populates="properties")
     pset_definition: Mapped["PropertySetDefinitionORM"] = relationship(
         back_populates="element_properties"
@@ -399,11 +472,13 @@ class TypePropertyORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     type_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("element_types.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("element_types.id", ondelete="CASCADE"),
+        nullable=False,
     )
     pset_definition_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("property_set_definitions.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("property_set_definitions.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     property_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -411,6 +486,7 @@ class TypePropertyORM(Base):
     data_type: Mapped[str] = mapped_column(String(20), default="string")
     unit: Mapped[str | None] = mapped_column(String(50))
 
+    # Relationships
     element_type: Mapped["ElementTypeORM"] = relationship(back_populates="properties")
     pset_definition: Mapped["PropertySetDefinitionORM"] = relationship(
         back_populates="type_properties"
@@ -433,7 +509,8 @@ class ElementQuantityORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     element_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("building_elements.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("building_elements.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     qto_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -442,6 +519,7 @@ class ElementQuantityORM(Base):
     unit: Mapped[str | None] = mapped_column(String(50))
     formula: Mapped[str | None] = mapped_column(Text)
 
+    # Relationships
     element: Mapped["BuildingElementORM"] = relationship(back_populates="quantities")
 
     __table_args__ = (
@@ -453,6 +531,11 @@ class ElementQuantityORM(Base):
     )
 
 
+# =============================================================================
+# Material Tables
+# =============================================================================
+
+
 class MaterialORM(Base):
     """Material table."""
 
@@ -461,13 +544,15 @@ class MaterialORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("ifc_projects.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("ifc_projects.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(String(100))
 
+    # Relationships
     project: Mapped["ProjectORM"] = relationship(back_populates="materials")
     element_materials: Mapped[list["ElementMaterialORM"]] = relationship(
         back_populates="material"
@@ -488,17 +573,20 @@ class ElementMaterialORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     element_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("building_elements.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("building_elements.id", ondelete="CASCADE"),
+        nullable=False,
     )
     material_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("materials.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     layer_order: Mapped[int | None] = mapped_column(Integer)
     layer_thickness: Mapped[Decimal | None] = mapped_column(DECIMAL(10, 4))
     is_ventilated: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Relationships
     element: Mapped["BuildingElementORM"] = relationship(back_populates="materials")
     material: Mapped["MaterialORM"] = relationship(back_populates="element_materials")
 
@@ -506,6 +594,11 @@ class ElementMaterialORM(Base):
         Index("idx_elem_mat_element", "element_id"),
         Index("idx_elem_mat_material", "material_id"),
     )
+
+
+# =============================================================================
+# Relationship Tables
+# =============================================================================
 
 
 class SpaceBoundaryORM(Base):
@@ -516,17 +609,20 @@ class SpaceBoundaryORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     space_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
     )
     element_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("building_elements.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("building_elements.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     boundary_type: Mapped[str | None] = mapped_column(String(50))
     physical_or_virtual: Mapped[str | None] = mapped_column(String(20))
     internal_or_external: Mapped[str | None] = mapped_column(String(20))
 
+    # Relationships
     space: Mapped["SpaceORM"] = relationship(back_populates="boundaries")
 
     __table_args__ = (
@@ -543,16 +639,19 @@ class ElementOpeningORM(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     host_element_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("building_elements.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("building_elements.id", ondelete="CASCADE"),
+        nullable=False,
     )
     filling_element_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("building_elements.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("building_elements.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     __table_args__ = (
         UniqueConstraint(
-            "host_element_id", "filling_element_id", name="openings_uk"
+            "host_element_id", "filling_element_id",
+            name="openings_uk"
         ),
         Index("idx_openings_host", "host_element_id"),
         Index("idx_openings_filling", "filling_element_id"),
