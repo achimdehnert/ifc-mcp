@@ -39,7 +39,14 @@ class ElementCategory(str, Enum):
 
     @classmethod
     def from_ifc_class(cls, ifc_class: str) -> ElementCategory:
-        """Map IFC class to category."""
+        """Map IFC class to category.
+
+        Args:
+            ifc_class: IFC entity class name (e.g., "IfcWall")
+
+        Returns:
+            Corresponding ElementCategory
+        """
         mapping = {
             "IfcWall": cls.WALL,
             "IfcWallStandardCase": cls.WALL_STANDARD_CASE,
@@ -60,6 +67,7 @@ class ElementCategory(str, Enum):
             "IfcRailing": cls.RAILING,
             "IfcFurniture": cls.FURNITURE,
             "IfcFurnishingElement": cls.FURNITURE,
+            # Distribution elements
             "IfcDistributionElement": cls.DISTRIBUTION_ELEMENT,
             "IfcFlowSegment": cls.DISTRIBUTION_ELEMENT,
             "IfcFlowFitting": cls.DISTRIBUTION_ELEMENT,
@@ -71,6 +79,7 @@ class ElementCategory(str, Enum):
 @dataclass
 class PropertyValue:
     """Property value with metadata."""
+
     name: str
     value: Any
     data_type: str = "string"
@@ -80,6 +89,7 @@ class PropertyValue:
 @dataclass
 class QuantityValue:
     """Quantity value with unit."""
+
     name: str
     value: Decimal
     unit: str | None = None
@@ -89,6 +99,7 @@ class QuantityValue:
 @dataclass
 class MaterialLayer:
     """Material layer in a layered structure."""
+
     material_name: str
     thickness: Decimal | None = None
     layer_order: int = 0
@@ -98,7 +109,21 @@ class MaterialLayer:
 
 @dataclass
 class BuildingElement:
-    """Building Element Domain Entity."""
+    """Building Element Domain Entity.
+
+    Represents a single building element from an IFC model.
+    Examples: walls, doors, windows, slabs, columns, etc.
+
+    Attributes:
+        id: Unique identifier (UUID)
+        project_id: Parent project ID
+        global_id: IFC GlobalId
+        ifc_class: IFC entity class (e.g., "IfcWall")
+        category: Element category
+        name: Element name
+        description: Optional description
+        tag: Element tag/number
+    """
 
     id: UUID
     project_id: UUID
@@ -111,26 +136,32 @@ class BuildingElement:
     object_type: str | None = None
     tag: str | None = None
 
+    # Geometry (denormalized for fast queries)
     length_m: Decimal | None = None
     width_m: Decimal | None = None
     height_m: Decimal | None = None
     area_m2: Decimal | None = None
     volume_m3: Decimal | None = None
 
+    # Position
     position_x: Decimal | None = None
     position_y: Decimal | None = None
     position_z: Decimal | None = None
 
+    # Spatial references
     storey_id: UUID | None = None
     storey_name: str | None = None
     type_id: UUID | None = None
     type_name: str | None = None
 
+    # Common properties (denormalized for fast access)
     is_external: bool | None = None
     is_load_bearing: bool | None = None
 
+    # Timestamp
     created_at: datetime = field(default_factory=datetime.utcnow)
 
+    # Lazy-loaded collections
     _properties: dict[str, dict[str, PropertyValue]] = field(
         default_factory=dict, repr=False
     )
@@ -152,7 +183,21 @@ class BuildingElement:
         storey_id: UUID | None = None,
         type_id: UUID | None = None,
     ) -> BuildingElement:
-        """Factory method to create a BuildingElement."""
+        """Factory method to create a BuildingElement.
+
+        Args:
+            project_id: Parent project UUID
+            global_id: IFC GlobalId string or GlobalId object
+            ifc_class: IFC class name (e.g., "IfcWall")
+            name: Optional element name
+            description: Optional description
+            tag: Optional tag
+            storey_id: Optional storey UUID
+            type_id: Optional type UUID
+
+        Returns:
+            New BuildingElement instance
+        """
         if isinstance(global_id, str):
             global_id = GlobalId(global_id)
 
@@ -169,6 +214,10 @@ class BuildingElement:
             type_id=type_id,
         )
 
+    # =========================================================================
+    # Property Access
+    # =========================================================================
+
     @property
     def properties(self) -> dict[str, dict[str, PropertyValue]]:
         """Get all property sets."""
@@ -177,7 +226,15 @@ class BuildingElement:
     def get_property(
         self, pset_name: str, property_name: str
     ) -> PropertyValue | None:
-        """Get a specific property value."""
+        """Get a specific property value.
+
+        Args:
+            pset_name: Property set name (e.g., "Pset_WallCommon")
+            property_name: Property name (e.g., "FireRating")
+
+        Returns:
+            PropertyValue or None if not found
+        """
         pset = self._properties.get(pset_name)
         if pset:
             return pset.get(property_name)
@@ -186,7 +243,15 @@ class BuildingElement:
     def get_property_value(
         self, pset_name: str, property_name: str
     ) -> Any | None:
-        """Get raw property value."""
+        """Get raw property value.
+
+        Args:
+            pset_name: Property set name
+            property_name: Property name
+
+        Returns:
+            Raw value or None
+        """
         prop = self.get_property(pset_name, property_name)
         return prop.value if prop else None
 
@@ -198,7 +263,15 @@ class BuildingElement:
         data_type: str = "string",
         unit: str | None = None,
     ) -> None:
-        """Set a property value."""
+        """Set a property value.
+
+        Args:
+            pset_name: Property set name
+            property_name: Property name
+            value: Property value
+            data_type: Data type
+            unit: Optional unit
+        """
         if pset_name not in self._properties:
             self._properties[pset_name] = {}
 
@@ -209,6 +282,10 @@ class BuildingElement:
             unit=unit,
         )
 
+    # =========================================================================
+    # Quantity Access
+    # =========================================================================
+
     @property
     def quantities(self) -> dict[str, dict[str, QuantityValue]]:
         """Get all quantity sets."""
@@ -217,7 +294,15 @@ class BuildingElement:
     def get_quantity(
         self, qto_name: str, quantity_name: str
     ) -> QuantityValue | None:
-        """Get a specific quantity."""
+        """Get a specific quantity.
+
+        Args:
+            qto_name: Quantity set name (e.g., "Qto_WallBaseQuantities")
+            quantity_name: Quantity name (e.g., "NetSideArea")
+
+        Returns:
+            QuantityValue or None
+        """
         qto = self._quantities.get(qto_name)
         if qto:
             return qto.get(quantity_name)
@@ -226,7 +311,15 @@ class BuildingElement:
     def get_quantity_value(
         self, qto_name: str, quantity_name: str
     ) -> Decimal | None:
-        """Get raw quantity value."""
+        """Get raw quantity value.
+
+        Args:
+            qto_name: Quantity set name
+            quantity_name: Quantity name
+
+        Returns:
+            Decimal value or None
+        """
         qty = self.get_quantity(qto_name, quantity_name)
         return qty.value if qty else None
 
@@ -238,7 +331,15 @@ class BuildingElement:
         unit: str | None = None,
         formula: str | None = None,
     ) -> None:
-        """Set a quantity value."""
+        """Set a quantity value.
+
+        Args:
+            qto_name: Quantity set name
+            quantity_name: Quantity name
+            value: Quantity value
+            unit: Optional unit
+            formula: Optional formula
+        """
         if qto_name not in self._quantities:
             self._quantities[qto_name] = {}
 
@@ -251,6 +352,10 @@ class BuildingElement:
             unit=unit,
             formula=formula,
         )
+
+    # =========================================================================
+    # Material Access
+    # =========================================================================
 
     @property
     def materials(self) -> list[MaterialLayer]:
@@ -265,7 +370,15 @@ class BuildingElement:
         is_ventilated: bool = False,
         category: str | None = None,
     ) -> None:
-        """Add a material layer."""
+        """Add a material layer.
+
+        Args:
+            material_name: Material name
+            thickness: Layer thickness in meters
+            layer_order: Order in layered structure
+            is_ventilated: Whether layer is ventilated
+            category: Material category
+        """
         if isinstance(thickness, float):
             thickness = Decimal(str(thickness))
 
@@ -287,9 +400,19 @@ class BuildingElement:
             return sorted_materials[0].material_name
         return None
 
+    # =========================================================================
+    # Derived Properties
+    # =========================================================================
+
     @property
     def fire_rating(self) -> FireRating | None:
-        """Get fire rating from properties."""
+        """Get fire rating from properties.
+
+        Searches common property sets for FireRating.
+
+        Returns:
+            FireRating or None
+        """
         pset_names = [
             "Pset_WallCommon",
             "Pset_DoorCommon",
@@ -343,7 +466,14 @@ class BuildingElement:
 
     @property
     def is_drywall(self) -> bool:
-        """Check if element is likely a drywall/partition."""
+        """Check if element is likely a drywall/partition.
+
+        Uses multiple heuristics:
+        1. Material keywords
+        2. Type name patterns
+        3. Property values
+        """
+        # Check materials
         drywall_keywords = [
             "gips", "gypsum", "drywall", "rigips", "knauf",
             "fermacell", "plasterboard", "trockenbau",
@@ -354,11 +484,13 @@ class BuildingElement:
             if any(kw in material_lower for kw in drywall_keywords):
                 return True
 
+        # Check type name
         if self.type_name:
             type_lower = self.type_name.lower()
             if any(kw in type_lower for kw in drywall_keywords):
                 return True
 
+        # Check if non-load-bearing wall
         if self.category in (ElementCategory.WALL, ElementCategory.WALL_STANDARD_CASE):
             if self.is_load_bearing is False:
                 return True
