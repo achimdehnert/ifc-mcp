@@ -1,6 +1,6 @@
-"""Result Pattern for explicit error handling.
+"""Result pattern for explicit error handling.
 
-Replaces exceptions with explicit Result types.
+Provides Success and Failure types to replace exception-based control flow.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ E = TypeVar("E")
 
 @dataclass(frozen=True)
 class Success(Generic[T]):
-    """Success result containing a value."""
+    """Successful result."""
 
     value: T
 
@@ -26,17 +26,17 @@ class Success(Generic[T]):
         return False
 
     def unwrap(self) -> T:
-        """Get the success value."""
+        """Get the value."""
         return self.value
 
     def unwrap_or(self, default: T) -> T:
-        """Get value or default."""
+        """Get the value or default."""
         return self.value
 
 
 @dataclass(frozen=True)
 class Failure(Generic[E]):
-    """Failure result containing an error."""
+    """Failed result."""
 
     error: E
 
@@ -48,39 +48,38 @@ class Failure(Generic[E]):
         """Check if result is failure."""
         return True
 
-    def unwrap(self) -> never:
-        """Raises the error."""
-        raise ValueError(f"Called unwrap on Failure: {self.error}")
+    def unwrap(self) -> None:
+        """Raise error when unwrapping failure."""
+        raise ValueError(f"Cannot unwrap Failure: {self.error}")
 
     def unwrap_or(self, default: T) -> T:
-        """Get value or default."""
+        """Get default value for failure."""
         return default
 
 
-# Type alias for Result
+# Type alias
 Result = Success[T] | Failure[E]
 
 
-# Convenience constructors
-def success(value: T) -> Success[T]:
-    """Create Success result.
+def ok(value: T) -> Success[T]:
+    """Create a Success result.
 
     Args:
-        value: Success value
+        value: The success value
 
     Returns:
-        Success instance
+        Success wrapping the value
     """
     return Success(value)
 
 
-def failure(error: E) -> Failure[E]:
-    """Create Failure result.
+def err(error: E) -> Failure[E]:
+    """Create a Failure result.
 
     Args:
-        error: Error value
+        error: The error value
 
     Returns:
-        Failure instance
+        Failure wrapping the error
     """
     return Failure(error)

@@ -1,6 +1,7 @@
-"""Shared utilities and configuration."""
-from __future__ import annotations
+"""Shared module.
 
+Cross-cutting concerns: configuration, logging, result pattern.
+"""
 from ifc_mcp.shared.config import Settings, get_settings, settings
 
 __all__ = [

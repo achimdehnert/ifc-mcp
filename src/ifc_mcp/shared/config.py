@@ -1,142 +1,113 @@
 """Application configuration.
 
-Uses pydantic-settings for environment variable support.
+Managed with pydantic-settings, supporting environment variable overrides.
 """
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from pathlib import Path
+from typing import Any
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings with environment variable support.
+    """Application settings.
 
-    All settings can be overridden via environment variables.
-    Example: DATABASE_URL, DEBUG, LOG_LEVEL
+    All settings can be overridden via environment variables
+    with the IFC_MCP_ prefix.
     """
 
     model_config = SettingsConfigDict(
+        env_prefix="IFC_MCP_",
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False,
         extra="ignore",
-    )
-
-    # =========================================================================
-    # Application
-    # =========================================================================
-    app_name: str = Field(default="ifc_mcp", description="Application name")
-    app_version: str = Field(default="0.1.0", description="Application version")
-    debug: bool = Field(default=False, description="Debug mode")
-    environment: Literal["development", "staging", "production"] = Field(
-        default="development",
-        description="Environment name",
     )
 
     # =========================================================================
     # Database
     # =========================================================================
-    database_url: str = Field(
-        default="postgresql+asyncpg://ifc_user:changeme@localhost:5432/ifc_db",
-        description="PostgreSQL connection URL (async)",
-    )
-    database_pool_size: int = Field(
-        default=5,
-        ge=1,
-        le=50,
-        description="Database connection pool size",
-    )
-    database_max_overflow: int = Field(
-        default=10,
-        ge=0,
-        le=50,
-        description="Max overflow connections",
-    )
-    database_pool_timeout: int = Field(
-        default=30,
-        ge=1,
-        description="Pool timeout in seconds",
-    )
-    database_echo: bool = Field(
-        default=False,
-        description="Echo SQL queries (for debugging)",
-    )
+    database_url: str = "postgresql+asyncpg://ifc_mcp:ifc_mcp@localhost:5432/ifc_mcp"
+    database_echo: bool = False
+    database_pool_size: int = 10
+    database_max_overflow: int = 20
+    database_pool_recycle: int = 3600
 
     # =========================================================================
     # IFC Import
     # =========================================================================
-    ifc_import_batch_size: int = Field(
-        default=500,
-        ge=100,
-        le=5000,
-        description="Batch size for IFC element import",
-    )
-    ifc_max_file_size_mb: int = Field(
-        default=500,
-        ge=10,
-        le=2000,
-        description="Maximum IFC file size in MB",
-    )
-    ifc_upload_dir: str = Field(
-        default="/tmp/ifc_uploads",
-        description="Directory for IFC file uploads",
-    )
+    ifc_import_batch_size: int = 500
+    ifc_import_max_file_size_mb: int = 500
+    ifc_import_timeout_seconds: int = 600
+    ifc_import_temp_dir: str = "/tmp/ifc_imports"
 
     # =========================================================================
     # Pagination
     # =========================================================================
-    default_page_size: int = Field(
-        default=50,
-        ge=1,
-        le=500,
-        description="Default pagination page size",
-    )
-    max_page_size: int = Field(
-        default=1000,
-        ge=100,
-        le=5000,
-        description="Maximum pagination page size",
-    )
+    default_page_size: int = 50
+    max_page_size: int = 1000
 
     # =========================================================================
     # Logging
     # =========================================================================
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
-        default="INFO",
-        description="Logging level",
-    )
-    log_format: Literal["json", "console"] = Field(
-        default="console",
-        description="Log output format",
-    )
+    log_level: str = "INFO"
+    log_format: str = "json"  # "json" or "console"
+    log_file: str | None = None
 
     # =========================================================================
-    # Validators
+    # Server
     # =========================================================================
+    server_name: str = "ifc-mcp"
+    server_version: str = "0.1.0"
+    server_host: str = "0.0.0.0"
+    server_port: int = 8003
+
+    # =========================================================================
+    # Export
+    # =========================================================================
+    export_dir: str = "/tmp/ifc_exports"
+    svg_output_dir: str = "/tmp/ifc_svg"
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
-        """Ensure database URL uses asyncpg driver."""
-        if "postgresql" in v and "asyncpg" not in v:
-            # Convert to async driver
+        """Ensure async driver is used."""
+        if "postgresql://" in v and "asyncpg" not in v:
             v = v.replace("postgresql://", "postgresql+asyncpg://")
-            v = v.replace("postgresql+psycopg2://", "postgresql+asyncpg://")
         return v
 
-    @property
-    def database_url_sync(self) -> str:
-        """Get synchronous database URL for Alembic."""
-        return self.database_url.replace("asyncpg", "psycopg")
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Validate log level."""
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        upper = v.upper()
+        if upper not in valid_levels:
+            raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
+        return upper
+
+    @field_validator("log_format")
+    @classmethod
+    def validate_log_format(cls, v: str) -> str:
+        """Validate log format."""
+        valid_formats = {"json", "console"}
+        lower = v.lower()
+        if lower not in valid_formats:
+            raise ValueError(f"Invalid log format: {v}. Must be one of {valid_formats}")
+        return lower
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Get cached settings instance."""
+    """Get cached settings instance.
+
+    Returns:
+        Settings instance (cached)
+    """
     return Settings()
 
 
-# Global settings instance
+# Module-level convenience
 settings = get_settings()

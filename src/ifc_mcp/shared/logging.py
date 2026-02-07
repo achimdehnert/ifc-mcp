@@ -1,6 +1,6 @@
 """Structured logging configuration.
 
-Uses structlog for structured logging with JSON or console output.
+Uses structlog for structured, contextual logging.
 """
 from __future__ import annotations
 
@@ -9,76 +9,92 @@ import sys
 from typing import Any
 
 import structlog
-from structlog.types import Processor
 
-from ifc_mcp.shared.config import settings
+_configured = False
 
 
-def setup_logging() -> None:
-    """Configure structured logging based on settings."""
-    # Determine processors based on format
-    shared_processors: list[Processor] = [
+def configure_logging(
+    level: str = "INFO",
+    log_format: str = "json",
+    log_file: str | None = None,
+) -> None:
+    """Configure structured logging.
+
+    Args:
+        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_format: Output format ("json" or "console")
+        log_file: Optional log file path
+    """
+    global _configured
+    if _configured:
+        return
+
+    # Shared processors
+    shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
+        structlog.processors.StackInfoRenderer(),
+        structlog.dev.set_exc_info,
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.stdlib.ExtraAdder(),
     ]
 
-    if settings.log_format == "json":
-        # JSON format for production
-        processors: list[Processor] = [
-            *shared_processors,
-            structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
-        ]
+    if log_format == "json":
+        renderer = structlog.processors.JSONRenderer()
     else:
-        # Console format for development
-        processors = [
-            *shared_processors,
-            structlog.dev.ConsoleRenderer(
-                colors=True,
-                exception_formatter=structlog.dev.plain_traceback,
-            ),
-        ]
+        renderer = structlog.dev.ConsoleRenderer()
 
     structlog.configure(
-        processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(logging, settings.log_level)
-        ),
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
 
-    # Configure standard library logging
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=getattr(logging, settings.log_level),
+    # Configure stdlib logging
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processor=renderer,
+        foreign_pre_chain=shared_processors,
     )
 
-    # Reduce noise from libraries
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(getattr(logging, level.upper()))
+
+    # Reduce noise from external libraries
+    logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    logging.getLogger("asyncpg").setLevel(logging.WARNING)
-    logging.getLogger("alembic").setLevel(logging.INFO)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+
+    _configured = True
 
 
-def get_logger(name: str | None = None, **initial_context: Any) -> structlog.BoundLogger:
-    """Get a structured logger instance.
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
+    """Get a structured logger.
 
     Args:
-        name: Logger name (usually __name__)
-        **initial_context: Initial context to bind to logger
+        name: Logger name (typically __name__)
 
     Returns:
-        Bound structlog logger
+        Bound structured logger
     """
-    logger = structlog.get_logger(name)
-    if initial_context:
-        logger = logger.bind(**initial_context)
-    return logger
+    if not _configured:
+        from ifc_mcp.shared.config import settings
+        configure_logging(
+            level=settings.log_level,
+            log_format=settings.log_format,
+            log_file=settings.log_file,
+        )
 
-
-# Convenience alias
-logger = get_logger("ifc_mcp")
+    return structlog.get_logger(name)
