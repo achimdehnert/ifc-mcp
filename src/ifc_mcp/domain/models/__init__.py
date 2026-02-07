@@ -22,7 +22,17 @@ from ifc_mcp.domain.models.space import (
 )
 
 __all__ = [
-    "Project", "Storey", "IfcSchemaVersion",
-    "BuildingElement", "ElementCategory", "PropertyValue", "QuantityValue", "MaterialLayer",
-    "Space", "SpaceBoundary",
+    # Project
+    "Project",
+    "Storey",
+    "IfcSchemaVersion",
+    # Element
+    "BuildingElement",
+    "ElementCategory",
+    "PropertyValue",
+    "QuantityValue",
+    "MaterialLayer",
+    # Space
+    "Space",
+    "SpaceBoundary",
 ]

@@ -16,7 +16,13 @@ from ifc_mcp.domain.value_objects.fire_rating import (
 from ifc_mcp.domain.value_objects.global_id import GlobalId
 
 __all__ = [
+    # GlobalId
     "GlobalId",
-    "FireRating", "FireRatingStandard",
-    "ExZone", "ExZoneType", "ExplosionType",
+    # FireRating
+    "FireRating",
+    "FireRatingStandard",
+    # ExZone
+    "ExZone",
+    "ExZoneType",
+    "ExplosionType",
 ]
