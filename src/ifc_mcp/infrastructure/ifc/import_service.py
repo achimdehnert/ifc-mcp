@@ -42,6 +42,7 @@ logger = get_logger(__name__)
 @dataclass
 class ImportResult:
     """Result of IFC import operation."""
+
     project_id: UUID
     project_name: str
     element_count: int
@@ -58,15 +59,20 @@ class IfcImportService:
     """Service for importing IFC files into the database."""
 
     def __init__(self, uow: UnitOfWork) -> None:
-        """Initialize import service."""
+        """Initialize import service.
+
+        Args:
+            uow: Unit of Work for database access
+        """
         self._uow = uow
         self._batch_size = settings.ifc_import_batch_size
 
-        self._storey_map: dict[str, UUID] = {}
-        self._type_map: dict[str, UUID] = {}
-        self._element_map: dict[str, UUID] = {}
-        self._material_map: dict[str, UUID] = {}
-        self._pset_map: dict[str, UUID] = {}
+        # Lookup caches for mapping during import
+        self._storey_map: dict[str, UUID] = {}  # global_id -> UUID
+        self._type_map: dict[str, UUID] = {}  # global_id -> UUID
+        self._element_map: dict[str, UUID] = {}  # global_id -> UUID
+        self._material_map: dict[str, UUID] = {}  # name -> UUID
+        self._pset_map: dict[str, UUID] = {}  # name -> UUID
 
     async def import_file(
         self,
@@ -74,53 +80,77 @@ class IfcImportService:
         *,
         skip_if_exists: bool = True,
     ) -> ImportResult:
-        """Import IFC file into database."""
+        """Import IFC file into database.
+
+        Args:
+            file_path: Path to IFC file
+            skip_if_exists: Skip import if file hash already exists
+
+        Returns:
+            ImportResult with statistics
+
+        Raises:
+            EntityAlreadyExistsError: If file already imported and skip_if_exists=True
+        """
         logger.info("Starting IFC import", file_path=str(file_path))
 
+        # Parse IFC file
         parser = IfcParser(file_path)
         parsed = parser.parse()
 
+        # Check for duplicate import
         if skip_if_exists and parsed.file_hash:
             existing = await self._uow.projects.get_by_file_hash(parsed.file_hash)
             if existing:
                 raise EntityAlreadyExistsError(
-                    "Project", parsed.file_hash,
+                    "Project",
+                    parsed.file_hash,
                     {"existing_project_id": str(existing.id)},
                 )
 
+        # Create project
         project = self._create_project(parsed)
         await self._uow.projects.add(project)
         logger.info("Created project", project_id=str(project.id), name=project.name)
 
+        # Import storeys
         storey_count = await self._import_storeys(project.id, parsed.storeys)
         logger.info("Imported storeys", count=storey_count)
 
+        # Import element types
         type_count = await self._import_types(project.id, parsed.types)
         logger.info("Imported types", count=type_count)
 
+        # Import materials
         material_count = await self._import_materials(project.id, parsed.materials)
         logger.info("Imported materials", count=material_count)
 
+        # Create property set definitions
         await self._create_pset_definitions(project.id, parsed)
 
+        # Import elements (in batches)
         element_count, property_count, quantity_count = await self._import_elements(
             project.id, parsed.elements
         )
         logger.info(
             "Imported elements",
-            count=element_count, properties=property_count,
+            count=element_count,
+            properties=property_count,
             quantities=quantity_count,
         )
 
+        # Import spaces
         space_count = await self._import_spaces(project.id, parsed.spaces)
         logger.info("Imported spaces", count=space_count)
 
+        # Commit transaction
         await self._uow.commit()
 
         logger.info(
             "IFC import complete",
             project_id=str(project.id),
-            elements=element_count, spaces=space_count,
+            elements=element_count,
+            spaces=space_count,
         )
 
         return ImportResult(
@@ -150,7 +180,9 @@ class IfcImportService:
         )
 
     async def _import_storeys(
-        self, project_id: UUID, storeys: list[ParsedStorey],
+        self,
+        project_id: UUID,
+        storeys: list[ParsedStorey],
     ) -> int:
         """Import storeys and build lookup map."""
         domain_storeys = []
@@ -169,7 +201,9 @@ class IfcImportService:
         return await self._uow.storeys.add_batch(domain_storeys)
 
     async def _import_types(
-        self, project_id: UUID, types: list[ParsedType],
+        self,
+        project_id: UUID,
+        types: list[ParsedType],
     ) -> int:
         """Import element types and build lookup map."""
         from ifc_mcp.infrastructure.database.models import ElementTypeORM
@@ -197,7 +231,9 @@ class IfcImportService:
         return len(type_orms)
 
     async def _import_materials(
-        self, project_id: UUID, material_names: set[str],
+        self,
+        project_id: UUID,
+        material_names: set[str],
     ) -> int:
         """Import materials and build lookup map."""
         material_orms = []
@@ -221,11 +257,14 @@ class IfcImportService:
         return len(material_orms)
 
     async def _create_pset_definitions(
-        self, project_id: UUID, parsed: ParsedProject,
+        self,
+        project_id: UUID,
+        parsed: ParsedProject,
     ) -> None:
         """Create property set definitions from all elements."""
         pset_names: set[str] = set()
 
+        # Collect all property set names
         for element in parsed.elements:
             for prop in element.properties:
                 pset_names.add(prop.pset_name)
@@ -238,6 +277,7 @@ class IfcImportService:
             for prop in element_type.properties:
                 pset_names.add(prop.pset_name)
 
+        # Create definitions
         pset_orms = []
         for name in pset_names:
             pset_id = uuid4()
@@ -256,16 +296,24 @@ class IfcImportService:
             await self._uow.flush()
 
     async def _import_elements(
-        self, project_id: UUID, elements: list[ParsedElement],
+        self,
+        project_id: UUID,
+        elements: list[ParsedElement],
     ) -> tuple[int, int, int]:
-        """Import elements in batches."""
+        """Import elements in batches.
+
+        Returns:
+            Tuple of (element_count, property_count, quantity_count)
+        """
         total_elements = 0
         total_properties = 0
         total_quantities = 0
 
+        # Process in batches
         for i in range(0, len(elements), self._batch_size):
             batch = elements[i : i + self._batch_size]
 
+            # Create domain elements
             domain_elements = []
             properties_batch: list[dict[str, Any]] = []
             quantities_batch: list[dict[str, Any]] = []
@@ -276,6 +324,7 @@ class IfcImportService:
                 domain_elements.append(element)
                 self._element_map[parsed.global_id] = element.id
 
+                # Collect properties
                 for prop in parsed.properties:
                     pset_id = self._pset_map.get(prop.pset_name)
                     if pset_id:
@@ -288,6 +337,7 @@ class IfcImportService:
                             "unit": prop.unit,
                         })
 
+                # Collect quantities
                 for qty in parsed.quantities:
                     quantities_batch.append({
                         "element_id": element.id,
@@ -298,6 +348,7 @@ class IfcImportService:
                         "formula": qty.formula,
                     })
 
+                # Collect materials
                 for mat in parsed.materials:
                     mat_id = self._material_map.get(mat.name)
                     if mat_id:
@@ -309,6 +360,7 @@ class IfcImportService:
                             "is_ventilated": mat.is_ventilated,
                         })
 
+            # Batch insert
             count = await self._uow.elements.add_batch(domain_elements)
             total_elements += count
 
@@ -318,6 +370,7 @@ class IfcImportService:
             qty_count = await self._uow.elements.add_quantities_batch(quantities_batch)
             total_quantities += qty_count
 
+            # Insert material associations
             if materials_batch:
                 from ifc_mcp.infrastructure.database.models import ElementMaterialORM
 
@@ -364,6 +417,7 @@ class IfcImportService:
             type_id=type_id,
         )
 
+        # Set additional fields
         element.object_type = parsed.object_type
         element.length_m = parsed.length_m
         element.width_m = parsed.width_m
@@ -379,14 +433,20 @@ class IfcImportService:
         return element
 
     async def _import_spaces(
-        self, project_id: UUID, spaces: list[ParsedSpace],
+        self,
+        project_id: UUID,
+        spaces: list[ParsedSpace],
     ) -> int:
         """Import spaces."""
+        # First, we need to create IfcSpace elements in building_elements
+        # Then link spaces to them
+
         space_elements: list[BuildingElement] = []
         domain_spaces: list[Space] = []
         boundaries_batch: list[dict[str, Any]] = []
 
         for parsed in spaces:
+            # Create building element for space
             storey_id = None
             if parsed.storey_global_id:
                 storey_id = self._storey_map.get(parsed.storey_global_id)
@@ -404,6 +464,7 @@ class IfcImportService:
             space_elements.append(element)
             self._element_map[parsed.global_id] = element.id
 
+            # Create space domain entity
             space = Space.create(
                 project_id=project_id,
                 element_id=element.id,
@@ -414,12 +475,14 @@ class IfcImportService:
                 storey_id=storey_id,
             )
 
+            # Set quantities
             space.net_floor_area = parsed.net_floor_area
             space.gross_floor_area = parsed.gross_floor_area
             space.net_volume = parsed.net_volume
             space.gross_volume = parsed.gross_volume
             space.net_height = parsed.net_height
 
+            # Set attributes
             space.occupancy_type = parsed.occupancy_type
             space.set_ex_zone(parsed.ex_zone)
             space.fire_compartment = parsed.fire_compartment
@@ -429,6 +492,7 @@ class IfcImportService:
 
             domain_spaces.append(space)
 
+            # Collect boundaries
             for boundary_gid in parsed.boundary_element_ids:
                 boundary_element_id = self._element_map.get(boundary_gid)
                 if boundary_element_id:
@@ -437,8 +501,13 @@ class IfcImportService:
                         "element_id": boundary_element_id,
                     })
 
+        # Batch insert elements
         await self._uow.elements.add_batch(space_elements)
+
+        # Batch insert spaces
         count = await self._uow.spaces.add_batch(domain_spaces)
+
+        # Batch insert boundaries
         await self._uow.spaces.add_boundaries_batch(boundaries_batch)
 
         return count
@@ -449,7 +518,15 @@ async def import_ifc_file(
     *,
     skip_if_exists: bool = True,
 ) -> ImportResult:
-    """Convenience function to import IFC file."""
+    """Convenience function to import IFC file.
+
+    Args:
+        file_path: Path to IFC file
+        skip_if_exists: Skip if file already imported
+
+    Returns:
+        ImportResult with statistics
+    """
     async with UnitOfWork() as uow:
         service = IfcImportService(uow)
         return await service.import_file(file_path, skip_if_exists=skip_if_exists)

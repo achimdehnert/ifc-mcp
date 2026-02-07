@@ -31,6 +31,7 @@ logger = get_logger(__name__)
 @dataclass
 class ParsedProperty:
     """Parsed IFC property."""
+
     pset_name: str
     name: str
     value: Any
@@ -41,6 +42,7 @@ class ParsedProperty:
 @dataclass
 class ParsedQuantity:
     """Parsed IFC quantity."""
+
     qto_name: str
     name: str
     value: Decimal | None
@@ -51,6 +53,7 @@ class ParsedQuantity:
 @dataclass
 class ParsedMaterial:
     """Parsed IFC material layer."""
+
     name: str
     thickness: Decimal | None = None
     layer_order: int = 0
@@ -61,6 +64,7 @@ class ParsedMaterial:
 @dataclass
 class ParsedElement:
     """Parsed IFC building element."""
+
     global_id: str
     ifc_class: str
     name: str | None = None
@@ -68,22 +72,27 @@ class ParsedElement:
     object_type: str | None = None
     tag: str | None = None
 
+    # Spatial reference
     storey_global_id: str | None = None
     type_global_id: str | None = None
 
+    # Geometry
     length_m: Decimal | None = None
     width_m: Decimal | None = None
     height_m: Decimal | None = None
     area_m2: Decimal | None = None
     volume_m3: Decimal | None = None
 
+    # Position
     position_x: Decimal | None = None
     position_y: Decimal | None = None
     position_z: Decimal | None = None
 
+    # Flags
     is_external: bool | None = None
     is_load_bearing: bool | None = None
 
+    # Collections
     properties: list[ParsedProperty] = field(default_factory=list)
     quantities: list[ParsedQuantity] = field(default_factory=list)
     materials: list[ParsedMaterial] = field(default_factory=list)
@@ -92,6 +101,7 @@ class ParsedElement:
 @dataclass
 class ParsedStorey:
     """Parsed IFC building storey."""
+
     global_id: str
     name: str | None = None
     long_name: str | None = None
@@ -101,6 +111,7 @@ class ParsedStorey:
 @dataclass
 class ParsedType:
     """Parsed IFC element type."""
+
     global_id: str
     ifc_class: str
     name: str | None = None
@@ -111,33 +122,45 @@ class ParsedType:
 @dataclass
 class ParsedSpace:
     """Parsed IFC space (room)."""
+
     global_id: str
     name: str | None = None
     long_name: str | None = None
     space_number: str | None = None
     storey_global_id: str | None = None
 
+    # Geometry
     net_floor_area: Decimal | None = None
     gross_floor_area: Decimal | None = None
     net_volume: Decimal | None = None
     gross_volume: Decimal | None = None
     net_height: Decimal | None = None
 
+    # Usage
     occupancy_type: str | None = None
+
+    # Ex-Zone (from properties)
     ex_zone: str | None = None
+
+    # Fire
     fire_compartment: str | None = None
 
+    # Finishes
     finish_floor: str | None = None
     finish_wall: str | None = None
     finish_ceiling: str | None = None
 
+    # Boundaries
     boundary_element_ids: list[str] = field(default_factory=list)
+
+    # Properties
     properties: list[ParsedProperty] = field(default_factory=list)
 
 
 @dataclass
 class ParsedProject:
     """Parsed IFC project with all data."""
+
     name: str
     description: str | None = None
     schema_version: IfcSchemaVersion = IfcSchemaVersion.IFC4
@@ -157,20 +180,45 @@ class ParsedProject:
 class IfcParser:
     """IFC file parser using IfcOpenShell."""
 
+    # Supported IFC schemas
     SUPPORTED_SCHEMAS = {"IFC2X3", "IFC4", "IFC4X1", "IFC4X2", "IFC4X3"}
 
+    # IFC classes to extract
     ELEMENT_CLASSES = {
-        "IfcWall", "IfcWallStandardCase", "IfcDoor", "IfcWindow",
-        "IfcSlab", "IfcRoof", "IfcColumn", "IfcBeam",
-        "IfcStair", "IfcStairFlight", "IfcRamp", "IfcRampFlight",
-        "IfcCurtainWall", "IfcCovering", "IfcRailing",
-        "IfcFurniture", "IfcFurnishingElement", "IfcOpeningElement",
-        "IfcDistributionElement", "IfcFlowSegment",
-        "IfcFlowFitting", "IfcFlowTerminal",
+        "IfcWall",
+        "IfcWallStandardCase",
+        "IfcDoor",
+        "IfcWindow",
+        "IfcSlab",
+        "IfcRoof",
+        "IfcColumn",
+        "IfcBeam",
+        "IfcStair",
+        "IfcStairFlight",
+        "IfcRamp",
+        "IfcRampFlight",
+        "IfcCurtainWall",
+        "IfcCovering",
+        "IfcRailing",
+        "IfcFurniture",
+        "IfcFurnishingElement",
+        "IfcOpeningElement",
+        # Distribution elements
+        "IfcDistributionElement",
+        "IfcFlowSegment",
+        "IfcFlowFitting",
+        "IfcFlowTerminal",
     }
 
     def __init__(self, file_path: str | Path) -> None:
-        """Initialize parser with IFC file path."""
+        """Initialize parser with IFC file path.
+
+        Args:
+            file_path: Path to IFC file
+
+        Raises:
+            IfcFileNotFoundError: If file doesn't exist
+        """
         self.file_path = Path(file_path)
 
         if not self.file_path.exists():
@@ -193,10 +241,12 @@ class IfcParser:
         except Exception as e:
             raise IfcParseError(str(self.file_path), str(e)) from e
 
+        # Validate schema
         schema = self._ifc.schema
         if schema not in self.SUPPORTED_SCHEMAS:
             raise UnsupportedIfcSchemaError(schema, list(self.SUPPORTED_SCHEMAS))
 
+        # Get unit scale factor (convert to meters)
         self._unit_scale = ifcopenshell.util.unit.calculate_unit_scale(self._ifc)
 
         logger.info(
@@ -207,7 +257,11 @@ class IfcParser:
         )
 
     def calculate_file_hash(self) -> str:
-        """Calculate SHA-256 hash of file."""
+        """Calculate SHA-256 hash of file.
+
+        Returns:
+            Hex-encoded hash string
+        """
         sha256 = hashlib.sha256()
         with open(self.file_path, "rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
@@ -215,23 +269,33 @@ class IfcParser:
         return sha256.hexdigest()
 
     def parse(self) -> ParsedProject:
-        """Parse entire IFC file."""
+        """Parse entire IFC file.
+
+        Returns:
+            ParsedProject with all extracted data
+        """
         logger.info("Starting IFC parse", path=str(self.file_path))
 
+        # Get project info
         project = self._parse_project_info()
 
+        # Parse storeys
         project.storeys = list(self._parse_storeys())
         logger.info("Parsed storeys", count=len(project.storeys))
 
+        # Parse element types
         project.types = list(self._parse_types())
         logger.info("Parsed types", count=len(project.types))
 
+        # Parse elements
         project.elements = list(self._parse_elements())
         logger.info("Parsed elements", count=len(project.elements))
 
+        # Parse spaces
         project.spaces = list(self._parse_spaces())
         logger.info("Parsed spaces", count=len(project.spaces))
 
+        # Collect unique materials
         for element in project.elements:
             for material in element.materials:
                 project.materials.add(material.name)
@@ -250,6 +314,8 @@ class IfcParser:
     def _parse_project_info(self) -> ParsedProject:
         """Parse project-level information."""
         ifc_project = self.ifc.by_type("IfcProject")[0]
+
+        # Get application info
         app_info = self._get_application_info()
 
         return ParsedProject(
@@ -266,10 +332,13 @@ class IfcParser:
     def _get_application_info(self) -> dict[str, str | None]:
         """Extract authoring application info."""
         result: dict[str, str | None] = {
-            "application": None, "author": None, "organization": None,
+            "application": None,
+            "author": None,
+            "organization": None,
         }
 
         try:
+            # Try to get OwnerHistory
             histories = self.ifc.by_type("IfcOwnerHistory")
             if histories:
                 history = histories[0]
@@ -312,10 +381,17 @@ class IfcParser:
     def _parse_types(self) -> Iterator[ParsedType]:
         """Parse element types."""
         type_classes = [
-            "IfcWallType", "IfcDoorType", "IfcWindowType",
-            "IfcSlabType", "IfcColumnType", "IfcBeamType",
-            "IfcCoveringType", "IfcCurtainWallType",
-            "IfcStairType", "IfcRampType", "IfcRailingType",
+            "IfcWallType",
+            "IfcDoorType",
+            "IfcWindowType",
+            "IfcSlabType",
+            "IfcColumnType",
+            "IfcBeamType",
+            "IfcCoveringType",
+            "IfcCurtainWallType",
+            "IfcStairType",
+            "IfcRampType",
+            "IfcRailingType",
             "IfcFurnitureType",
         ]
 
@@ -328,11 +404,15 @@ class IfcParser:
                         name=element_type.Name,
                         description=getattr(element_type, "Description", None),
                     )
+
+                    # Extract type properties
                     parsed.properties = list(
                         self._extract_properties(element_type)
                     )
+
                     yield parsed
             except Exception:
+                # Type class may not exist in schema
                 pass
 
     def _parse_elements(self) -> Iterator[ParsedElement]:
@@ -344,7 +424,8 @@ class IfcParser:
             except Exception as e:
                 logger.warning(
                     "Failed to parse element class",
-                    element_class=element_class, error=str(e),
+                    element_class=element_class,
+                    error=str(e),
                 )
 
     def _parse_single_element(self, element: Any) -> ParsedElement:
@@ -358,14 +439,17 @@ class IfcParser:
             tag=getattr(element, "Tag", None),
         )
 
+        # Get spatial container (storey)
         container = ifcopenshell.util.element.get_container(element)
         if container and container.is_a("IfcBuildingStorey"):
             parsed.storey_global_id = container.GlobalId
 
+        # Get element type
         element_type = ifcopenshell.util.element.get_type(element)
         if element_type:
             parsed.type_global_id = element_type.GlobalId
 
+        # Get placement/position
         try:
             placement = ifcopenshell.util.placement.get_local_placement(
                 element.ObjectPlacement
@@ -377,16 +461,20 @@ class IfcParser:
         except Exception:
             pass
 
+        # Extract properties
         parsed.properties = list(self._extract_properties(element))
 
+        # Extract common property flags
         for prop in parsed.properties:
             if prop.name == "IsExternal":
                 parsed.is_external = self._parse_bool(prop.value)
             elif prop.name == "LoadBearing":
                 parsed.is_load_bearing = self._parse_bool(prop.value)
 
+        # Extract quantities
         parsed.quantities = list(self._extract_quantities(element))
 
+        # Set geometry from quantities
         for qty in parsed.quantities:
             if qty.name in ("Length", "NetLength", "GrossLength"):
                 parsed.length_m = qty.value
@@ -401,6 +489,7 @@ class IfcParser:
                 if parsed.volume_m3 is None:
                     parsed.volume_m3 = qty.value
 
+        # Extract materials
         parsed.materials = list(self._extract_materials(element))
 
         return parsed
@@ -414,12 +503,15 @@ class IfcParser:
                 long_name=getattr(space, "LongName", None),
             )
 
+            # Get spatial container (storey)
             container = ifcopenshell.util.element.get_container(space)
             if container and container.is_a("IfcBuildingStorey"):
                 parsed.storey_global_id = container.GlobalId
 
+            # Extract properties
             parsed.properties = list(self._extract_properties(space))
 
+            # Extract specific properties
             for prop in parsed.properties:
                 if prop.pset_name == "Pset_SpaceCommon":
                     if prop.name == "Reference":
@@ -431,12 +523,15 @@ class IfcParser:
                     elif prop.name == "GrossPlannedArea":
                         parsed.gross_floor_area = self._to_decimal(prop.value)
 
+                # Look for Ex-Zone in various property sets
                 if prop.name in ("ExZone", "Ex-Zone", "ExplosionZone", "ATEXZone"):
                     parsed.ex_zone = str(prop.value)
 
+                # Fire compartment
                 if prop.name in ("FireCompartment", "Brandabschnitt"):
                     parsed.fire_compartment = str(prop.value)
 
+                # Finishes
                 if prop.name == "FinishFloor":
                     parsed.finish_floor = str(prop.value)
                 elif prop.name == "FinishWall":
@@ -444,6 +539,7 @@ class IfcParser:
                 elif prop.name == "FinishCeiling":
                     parsed.finish_ceiling = str(prop.value)
 
+            # Extract quantities
             for qty in self._extract_quantities(space):
                 if qty.name == "NetFloorArea":
                     parsed.net_floor_area = qty.value
@@ -456,6 +552,7 @@ class IfcParser:
                 elif qty.name == "FinishCeilingHeight":
                     parsed.net_height = qty.value
 
+            # Get space boundaries
             try:
                 boundaries = getattr(space, "BoundedBy", []) or []
                 for boundary in boundaries:
@@ -476,7 +573,7 @@ class IfcParser:
                 if not isinstance(properties, dict):
                     continue
                 for prop_name, prop_value in properties.items():
-                    if prop_name == "id":
+                    if prop_name == "id":  # Skip internal ID
                         continue
                     yield ParsedProperty(
                         pset_name=pset_name,
@@ -490,6 +587,7 @@ class IfcParser:
     def _extract_quantities(self, element: Any) -> Iterator[ParsedQuantity]:
         """Extract quantities from an element."""
         try:
+            # Get quantity sets
             for rel in getattr(element, "IsDefinedBy", []) or []:
                 if not rel.is_a("IfcRelDefinesByProperties"):
                     continue
@@ -504,6 +602,7 @@ class IfcParser:
                     qty_value = None
                     unit = None
 
+                    # Get value based on quantity type
                     if quantity.is_a("IfcQuantityLength"):
                         qty_value = quantity.LengthValue * self._unit_scale
                         unit = "m"
